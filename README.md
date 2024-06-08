@@ -1,16 +1,16 @@
 # CA80 Microcomputer and Clones
 
-Welcome to the CA80 Microcomputer repository! This repository is dedicated to preserving and sharing information, resources, and projects related to the CA80 microcomputer and its various clones.
+Welcome to the CA80 Microcomputer repository! This repository is dedicated to preserving and sharing information, resources, and projects related to the polish CA80 microcomputer and its various clones.
 
 ## Overview
 
-The CA80 is an 8-bit microcomputer developed in the late 1970s and early 1980s. It was widely used in educational and hobbyist circles due to its simplicity and ease of use. The CA80 features a Z80 CPU, a 7-segment display, and a range of I/O options, including tape recorder interfacing.
+The CA80 is an 8-bit microcomputer developed in Poland by young engineer Stanisław Gardynik in the early 1980s. It was widely used in educational and hobbyist circles due to its simplicity and ease of use. The CA80 features a Z80 CPU, a 7-segment display, and a range of I/O options, including tape recorder interfacing.
 
 ## Features
 
 - **CPU**: Z80 microprocessor
-- **Display**: 6-digit 7-segment display
-- **Memory**: Typically 2KB RAM, expandable
+- **Display**: 8-digit 7-segment display
+- **Memory**: Typically 16-32KB RAM, expandable
 - **Storage**: Interface for cassette tape storage
 - **I/O**: Multiple ports for expansion and peripheral connections
 - **Programming**: Machine code and assembly language
@@ -23,11 +23,11 @@ The CA80 is powered by the Z80 CPU, a popular 8-bit microprocessor known for its
 
 ### Memory
 
-The standard configuration includes 2KB of RAM, which can be expanded using additional memory modules.
+The standard configuration includes 2-16KB of RAM, which can be expanded using additional memory modules.
 
 ### Display
 
-The primary output device is a 6-digit 7-segment display, used for displaying hexadecimal values and simple messages.
+The primary output device is a 8-digit 7-segment display, used for displaying hexadecimal values and simple messages.
 
 ### Storage
 
