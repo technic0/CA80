@@ -139,7 +139,7 @@ The NMI handler checks whether the "M" key is being held to return control to th
 0101: JP   Z,MWCIS
 ```
 
-**MIK90-only (21 bytes + 12 bytes padding):**
+**MIK290-only (21 bytes + 12 bytes padding):**
 ```
 ; Set keyboard decoder to M-key row via PC port only
 00E4: LD   A,C / OR 0FH / AND 0FEH / OUT (PC),A
@@ -152,7 +152,7 @@ The NMI handler checks whether the "M" key is being held to return control to th
 0101: DS   12, FFH     ; unused
 ```
 
-The MIK90-only version is simpler because it only manipulates the PC port via the system 8255. The M-key column code differs (3EH vs MKLA64/50H) reflecting the different keyboard matrix wiring.
+The MIK290-only version is simpler because it only manipulates the PC port via the system 8255. The M-key column code differs (3EH vs MKLA64/50H) reflecting the different keyboard matrix wiring.
 
 #### 3. CSTS Keyboard Scan (0130–015C)
 
@@ -174,7 +174,7 @@ The keyboard scanning procedure is fundamentally different between the two varia
 - Falls through to `KONW` for key code translation
 
 ```
-; MIK90-only CSTS (simplified)
+; MIK290-only CSTS (simplified)
 0130: PUSH HL / PUSH BC
 0132: LD   L,4             ; Only 4 rows
 0134: DEC  L               ; L=3,2,1,0,FFH
@@ -259,7 +259,7 @@ The MIK290-only version expects emulator code to be pre-loaded in a ROM at 8000H
 
 ```
 0000 ┌──────────────────────────────────┐
-     │ CA80 Monitor V3.0 (MIK90-only)  │
+     │ CA80 Monitor V3.0 (MIK290-only)  │
      │ Core routines, RST vectors,     │
      │ NMI handler, display driver,    │
      │ keyboard scan, system commands  │
@@ -345,7 +345,7 @@ When a breakpoint is hit, all registers are saved and the monitor returns to the
 ## Repository Contents
 
 - `CA80.BIN` — EPROM dump of the MIK290-only variant (8 KB, 2764)
-- `ca80_mik90.asm` — Fully reconstructed and verified assembly source (MIK90-only variant)
+- `ca80_mik90.asm` — Fully reconstructed and verified assembly source (MIK290-only variant)
 - `ca80_monitor.asm` — Assembly source matching the MIK08 listing (MIK90+MIK94 variant)
 
 ## References
