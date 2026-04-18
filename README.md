@@ -345,8 +345,8 @@ When a breakpoint is hit, all registers are saved and the monitor returns to the
 ## Repository Contents
 
 - `CA80.BIN` — EPROM dump of the MIK290-only variant (8 KB, 2764)
-- `ca80_mik90.asm` — Fully reconstructed and verified assembly source (MIK290-only variant)
-- `ca80_monitor.asm` — Assembly source matching the MIK08 listing (MIK90+MIK94 variant)
+- `ca80_monitor_new_mik290.asm` — Fully reconstructed and verified assembly source (MIK290-only variant)
+- `ca80_monitor_old.asm` — Assembly source matching the MIK08 listing (MIK90+MIK94 variant)
 
 ## References
 
