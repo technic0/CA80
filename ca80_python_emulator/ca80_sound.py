@@ -57,8 +57,12 @@ import numpy as np
 try:
     import sounddevice as sd
     _SD_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError) as e:
+    # ImportError: brak pakietu sounddevice
+    # OSError: PortAudio library not found (biblioteka systemowa)
+    # Oba traktujemy jednakowo — emulator działa dalej bez dźwięku.
     _SD_AVAILABLE = False
+    _SD_IMPORT_ERROR = str(e)
 
 
 # ============================================================================

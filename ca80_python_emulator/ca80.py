@@ -1,26 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-ca80_main.py
-Główny plik emulatora CA‑80 w Pythonie. Wersja z UI (blessed).
+ca80.py
+Główny plik emulatora CA‑80 w Pythonie. Wersja z UI (blessed) + audio.
 
-Używa rdzenia Z80 z pliku Z80_core.py oraz modułów ca80_memory.py i ca80_ports.py.
-Wczytuje ROM z pliku (domyślnie CA80.BIN).
+Konfiguracja sprzętowa (rozbudowana MIK290, wg dokumentacji MIK09 rozdz. 3.0):
+  U9  @ 0x0000-0x3FFF — ROM 16 KB (monitor systemowy, CA80.BIN)
+  U10 @ 0x4000-0x7FFF — ROM 16 KB (pakiet C800, C800.BIN)
+  U11 @ 0x8000-0xBFFF — ROM 16 KB (pakiet transmisyjny, C930.BIN)
+  U12 @ 0xC000-0xFFFF — RAM 16 KB (62256 lub 6264)
+
+Używa rdzenia Z80 z pliku Z80_core.py oraz modułów ca80_memory.py,
+ca80_ports.py i ca80_sound.py.
 
 Wymagania:
   Python 3.11 (zalecany)
-  pip install blessed
-  Pliki Z80_core.py, ca80_memory.py, ca80_ports.py w tym samym katalogu.
-  Plik ROM (np. CA80.BIN) w tym samym katalogu lub podany przez --rom.
+  pip install blessed sounddevice numpy
+  Pliki Z80_core.py, ca80_memory.py, ca80_ports.py, ca80_sound.py,
+  CA80.BIN, C930.BIN, C800.BIN w tym samym katalogu.
 
 Uruchomienie:
-  python ca80.py [--step] [--anode] [--rom PLIK] [--hirom PLIK] [--u10 PLIK] [--c800 PLIK] [--ram KB]
+  python ca80.py [--step] [--anode] [--no-audio]
+                 [--monitor PLIK] [--c930 PLIK] [--c800 PLIK]
 
-  Przykład z C930 MONITOR (gniazdo U11):
-  python ca80.py --c800 C930.BIN
-  Następnie w emulatorze: G 8 0 0 2 = (skok pod adres 0x8002)
-
-  Dla gier wymagających 8KB RAM (Warcaby, Szachy):
-  python ca80.py --c800 C930.BIN --ram 8
+  Wejście do C800 MONITOR:  *80       (sprawdza [0x4001]==0x55, skok do 0x4020)
+  Wejście do C930 MONITOR:  *89       (sprawdza [0x8001]==0xAA, skok do 0x8002)
+  Bezpośredni skok użytkownika:  *G <adres> =   (np. *G C 0 0 0 = → 0xC000)
 """
 from __future__ import annotations
 import sys
@@ -104,11 +108,18 @@ class PPI8255State:
 # Główna klasa emulatora CA‑80 (kontener stanu i menedżer UI)
 # ----------------------------------------------------------------------------
 class CA80:
-    def __init__(self, low_rom_data: bytes, hirom_data: bytes | None = None,
-                 u10_rom_data: bytes | None = None, *, ram_size: int = 0x800,
-                 anode: bool = False, step: bool = False):
-        self.ram_physical = bytearray(ram_size)  # RAM mirrorowane w C000-FFFF
-        memory.init_memory(low_rom_data, self.ram_physical, hirom_data, u10_rom_data)
+    def __init__(self,
+                 monitor_path: str = "CA80.BIN",
+                 c930_path: str = "C930.BIN",
+                 c800_path: str = "C800.BIN",
+                 *,
+                 anode: bool = False,
+                 step: bool = False,
+                 audio_enabled: bool = True):
+        # Inicjalizacja pamięci — konfiguracja sprzętowa rozbudowana MIK290.
+        # Mapa 16K/16K/4K ROM + 28K RAM; szczegóły w ca80_memory.py.
+        # strict=True: brak któregokolwiek pliku = błąd krytyczny.
+        memory.init_memory(monitor_path, c930_path, c800_path, strict=True)
 
         # Jeden PPI 8255 (U7) — ctrl init 0x90: PA=in, PB=out, PC=out
         self.ppi1 = PPI8255State()
@@ -118,8 +129,7 @@ class CA80:
         self.pressed_keys: set[str] = set()
 
         # Uruchom system audio (port 0xEC → 74123 → głośnik).
-        # Parametr enabled=False wyłącza bez zrywania kompatybilności.
-        self.audio = AudioSystem(enabled=True)
+        self.audio = AudioSystem(enabled=audio_enabled)
 
         # Licznik T-stanów Z80 od początku bieżącej ramki emulacji.
         # Aktualizowany w pętli run() po każdym execute_one_step().
@@ -340,50 +350,51 @@ class CA80:
 # Główna część programu (CLI)
 # ----------------------------------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Emulator mikrokomputera CA‑80 (rdzeń Z80_core.py)", formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("--rom", default="CA80.BIN", metavar="PLIK", help="Plik z podstawowym ROM 8KB (domyślnie: CA80.BIN)")
-    parser.add_argument("--hirom", metavar="PLIK", help="Plik z dodatkowym EPROM 16 kB mapowanym @ 8000-BFFF (gniazdo U11)")
-    parser.add_argument("--c800", metavar="PLIK", help="Alias dla --hirom: ładuje C930 MONITOR do U11 (8000-BFFF).\n"
-                        "Użycie: --c800 C930.BIN, następnie G 8 0 0 2 =")
-    parser.add_argument("--u10", metavar="PLIK", help="Plik z EPROM rozszerzenia (do 16KB) mapowanym @ 4000-7FFF (gniazdo U10)")
-    parser.add_argument("--ram", type=int, default=2, choices=[2, 8], metavar="KB",
-                        help="Rozmiar fizycznego RAM w KB: 2 (6116) lub 8 (6264, wymagany dla Warcabów/Szachów). Domyślnie: 2")
-    parser.add_argument("--anode", action="store_true", help="Wyświetlacze ze wspólną anodą (odwraca logikę segmentów)")
-    parser.add_argument("--step", action="store_true", help="Tryb krokowy (naciśnij Enter, aby wykonać krok)")
+    parser = argparse.ArgumentParser(
+        description="Emulator mikrokomputera CA‑80 (konfiguracja rozbudowana MIK290)",
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("--monitor", default="CA80.BIN", metavar="PLIK",
+                        help="Monitor systemowy (U9 @ 0x0000, domyślnie CA80.BIN)")
+    parser.add_argument("--c930", default="C930.BIN", metavar="PLIK",
+                        help="Pakiet C930 (U11 @ 0x4000, domyślnie C930.BIN)")
+    parser.add_argument("--c800", default="C800.BIN", metavar="PLIK",
+                        help="Pakiet C800 (U10 @ 0x8000, domyślnie C800.BIN)")
+    parser.add_argument("--anode", action="store_true",
+                        help="Wyświetlacze ze wspólną anodą (odwraca logikę segmentów)")
+    parser.add_argument("--step", action="store_true",
+                        help="Tryb krokowy (naciśnij Enter, aby wykonać krok)")
+    parser.add_argument("--no-audio", action="store_true",
+                        help="Wyłącz generowanie dźwięku (port 0xEC)")
     args = parser.parse_args()
 
-    low_rom_data = None; hirom_data = None; u10_rom_data = None
-    ram_size = args.ram * 1024  # 2KB lub 8KB
+    # Szybka weryfikacja istnienia plików przed uruchomieniem UI.
+    # Memory.load_bin obsłużyłoby brak pliku gracefully, ale strict=True
+    # w CA80.__init__ spowoduje wyjątek — więc lepiej od razu dać
+    # czytelny komunikat tutaj, z listą wszystkich brakujących plików.
+    missing = [p for p in (args.monitor, args.c930, args.c800)
+               if not pathlib.Path(p).is_file()]
+    if missing:
+        print(f"[BŁĄD] Brak plików ROM: {', '.join(missing)}", file=sys.stderr)
+        print("[INFO] Umieść je w bieżącym katalogu lub podaj ścieżki przez "
+              "--monitor, --c930, --c800.", file=sys.stderr)
+        sys.exit(1)
 
-    # --c800 jest aliasem dla --hirom
-    hirom_arg = args.hirom or args.c800
-    if args.hirom and args.c800:
-        print("[WARN] Podano zarówno --hirom jak i --c800. Używam --hirom.", file=sys.stderr)
-        hirom_arg = args.hirom
-
-    try:
-        low_rom_filepath = pathlib.Path(args.rom); print(f"[INFO] Wczytywanie Low ROM: {low_rom_filepath}...")
-        low_rom_data = low_rom_filepath.read_bytes(); assert len(low_rom_data) == 0x2000, "Low ROM 8KB"
-        print(f"[INFO] Wczytano {len(low_rom_data)} bajtów Low ROM.")
-        if hirom_arg:
-            hirom_filepath = pathlib.Path(hirom_arg); print(f"[INFO] Wczytywanie Hi ROM (U11): {hirom_filepath}...")
-            hirom_data = hirom_filepath.read_bytes(); assert len(hirom_data) == 0x4000, "Hi ROM 16KB"
-            print(f"[INFO] Wczytano {len(hirom_data)} bajtów Hi ROM (U11 @ 8000-BFFF).")
-        if args.u10:
-            u10_filepath = pathlib.Path(args.u10); print(f"[INFO] Wczytywanie ROM U10: {u10_filepath}...")
-            u10_rom_data = u10_filepath.read_bytes()
-            assert 0 < len(u10_rom_data) <= 0x4000, "U10 ROM max 16KB"
-            print(f"[INFO] Wczytano {len(u10_rom_data)} bajtów ROM U10 (@ 4000-{0x4000+len(u10_rom_data)-1:04X}).")
-    except Exception as e: print(f"[BŁĄD] Odczyt ROM: {e}", file=sys.stderr); sys.exit(1)
-
-    print(f"[INFO] Start CA‑80 (Python {sys.version_info.major}.{sys.version_info.minor}, rdzeń Z80_core.py, RAM={args.ram}KB)")
+    print(f"[INFO] Start CA‑80 (Python {sys.version_info.major}."
+          f"{sys.version_info.minor}, rdzeń Z80_core.py, "
+          f"konfiguracja rozbudowana 16K+16K+4K ROM / 28K RAM)")
     print("[INFO] Naciśnij 'q' aby zakończyć…")
     time.sleep(0.5)
 
-    machine = None; term = Terminal(); exit_code = 0
+    machine = None
+    term = Terminal()
+    exit_code = 0
     try:
-        machine = CA80(low_rom_data=low_rom_data, hirom_data=hirom_data, u10_rom_data=u10_rom_data,
-                       ram_size=ram_size, anode=args.anode, step=args.step)
+        machine = CA80(monitor_path=args.monitor,
+                       c930_path=args.c930,
+                       c800_path=args.c800,
+                       anode=args.anode,
+                       step=args.step,
+                       audio_enabled=not args.no_audio)
         machine.run()
         print("\n[INFO] Zakończono emulację.")
     except Exception as e:
