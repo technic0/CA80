@@ -63,32 +63,67 @@ def init_ports(emulator_instance, audio_system=None):
 
 
 # ---------------------------------------------------------------------------
-# Matryca klawiatury CA80 MIK90 — 4 kolumny (PC3..PC0) × 6 rzędów (PA6..PA1)
+# Matryca klawiatury CA80 MIK90 — 4 kolumny (PC3..PC0) × 6 wierszy (PA6..PA1)
 #
 # KEY_MATRIX[(col_bit, pa_row_bit)] = znak
 #   col_bit     = indeks bitu portu PC który jest 0 (aktywna kolumna, 0..3)
 #   pa_row_bit  = indeks bitu portu PA który odczytuje się jako 0 (1..6)
 #
-# Kod rzeczywisty klawisza M = 3EH, sprawdzany w NMI przez:
-#   OUT (PC),A ; A = ..._1110  (bit 0 = 0 → kolumna L=0 aktywna)
-#   IN  A,(PA) ; oczekiwane: PA1=0, reszta PA=1
-#   RRCA / AND 3FH / CP 3EH
+# Pełna matryca 24 klawiszy zweryfikowana z:
+#   1. Procedury CSTSM @ 0130 monitora MIK290
+#   2. Tablicy TKLAW @ 0300 monitora MIK290
+#   3. Dokumentacji R23 (Tabela programowania portu 8255 w trybie 0)
 #
-# Klawisz '.' (SPAC) to kolumna L=1, PA1. NIGDY nie powinien być widoczny
-# gdy wystawiona jest kolumna L=0 — i nie będzie, jeśli emulator prawidłowo
-# używa aktualnego stanu portu PC zamiast pamiętania "ostatniej aktywnej".
+# Dekodowanie: każdy klawisz aktywuje DOKŁADNIE JEDEN bit PA w DOKŁADNIE
+# JEDNEJ kolumnie PC. Sprzętowy kod rzeczywisty klawisza ma postać:
+#     bit 7,6 = numer kolumny L (3..0)
+#     bit 5..0 = wiersze (PA6..PA1, 0=wciśnięty w aktywnej kolumnie)
+#
+# Kompletna matryca (zgodna z fizycznym układem na maskownicy CA80):
+#         L=3 (PC3=0)  L=2 (PC2=0)  L=1 (PC1=0)  L=0 (PC0=0)
+#   PA1:    =/CR         ./SPAC       G            M
+#   PA2:    2            6            A            E
+#   PA3:    0            4            8            C
+#   PA4:    F4           F3           F2           F1   ← uwaga: F1 po prawej!
+#   PA5:    1            5            9            D
+#   PA6:    3            7            B            F
+#
+# WAŻNE: F1-F4 są ułożone w kolejności ODWROTNEJ względem hex/akcji!
+# To wynika z układu fizycznego — F-klawisze są na maskownicy w lewej
+# kolumnie, ale ich kody rzeczywiste odpowiadają KOLUMNOM ELEKTRYCZNYM
+# liczonym od L=0 (prawa) do L=3 (lewa). Stąd:
+#   F1 (lewa-góra na maskownicy) → kod tablicowy 0x17, kolumna L=0
+#   F4 (lewa-dół na maskownicy)  → kod tablicowy 0x14, kolumna L=3
+#
+# Klawisze F1-F4 to (cytując MIK09): "odpowiedniki Z,Y,X,W w starym CA80".
+# Kolejność Z,Y,X,W = F1,F2,F3,F4 (kody tablicowe 0x17,0x16,0x15,0x14).
+#
+# Detekcja klawisza M w NMI (osobna procedura @ 00E4-0100): MIK290 używa
+# kodu rzeczywistego 0x3E (CP 3EH @ 0334), zgodnego z tablicą TKLAW.
+#
+# Nazwy klawiszy w tej matrycy:
+#   '0'-'9', 'A'-'F'  — 16 klawiszy hex
+#   '=' = klawisz CR (Enter, równa się), kod tablicowy 0x12
+#   '.' = klawisz SPAC (kropka, spacja),  kod tablicowy 0x11
+#   'G' = klawisz G (Go),                 kod tablicowy 0x10
+#   'M' = klawisz M (Monitor return),     kod tablicowy 0x13
+#   'F1'-'F4' = klawisze funkcyjne,       kody tablicowe 0x17,0x16,0x15,0x14
 # ---------------------------------------------------------------------------
 KEY_MATRIX = {
     # col L=3 (PC3 = 0)
-    (3, 3): '0', (3, 5): '1', (3, 2): '2', (3, 6): '3', (3, 1): '=',
+    (3, 1): '=',  (3, 2): '2',  (3, 3): '0',
+    (3, 4): 'F4', (3, 5): '1',  (3, 6): '3',
     # col L=2 (PC2 = 0)
-    (2, 3): '4', (2, 5): '5', (2, 2): '6', (2, 6): '7', (2, 1): '.',
+    (2, 1): '.',  (2, 2): '6',  (2, 3): '4',
+    (2, 4): 'F3', (2, 5): '5',  (2, 6): '7',
     # col L=1 (PC1 = 0)
-    (1, 3): '8', (1, 5): '9', (1, 2): 'A', (1, 6): 'B', (1, 1): 'G',
+    (1, 1): 'G',  (1, 2): 'A',  (1, 3): '8',
+    (1, 4): 'F2', (1, 5): '9',  (1, 6): 'B',
     # col L=0 (PC0 = 0)
-    (0, 3): 'C', (0, 5): 'D', (0, 2): 'E', (0, 6): 'F', (0, 1): 'M',
+    (0, 1): 'M',  (0, 2): 'E',  (0, 3): 'C',
+    (0, 4): 'F1', (0, 5): 'D',  (0, 6): 'F',
 }
-# Odwrotna mapa: klawisz → (col_bit, pa_row_bit)
+# Odwrotna mapa: nazwa klawisza → (col_bit, pa_row_bit)
 CHAR_TO_POS = {v: k for k, v in KEY_MATRIX.items()}
 
 

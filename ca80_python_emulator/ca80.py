@@ -147,6 +147,8 @@ class CA80:
 
         # Mapowanie klawiszy PC → znaki CA80
         # '.' = SPAC (parametr/następny adres), '=' = CR (zatwierdź/wykonaj)
+        # Klawisze F1-F4 są mapowane osobno przez key.code (sekwencje terminala),
+        # patrz pętla run() — nie da się ich zmapować jako stringi.
         self.KEYMAP_PC = {
             '0': '0', '1': '1', '2': '2', '3': '3', '4': '4',
             '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
@@ -158,6 +160,16 @@ class CA80:
             '=': '=',            # CR
             ' ': '.',            # Spacja jako SPAC (alternatywa)
             '\n': '=',           # Enter jako CR (alternatywa)
+        }
+
+        # Mapowanie klawiszy funkcyjnych terminala → klawisze CA80
+        # F1-F4 = odpowiedniki Z,Y,X,W w starym CA80 (cytat z MIK09).
+        # blessed rozpoznaje je jako sekwencje terminalowe z key.code.
+        self.KEYMAP_FN = {
+            'KEY_F1': 'F1',
+            'KEY_F2': 'F2',
+            'KEY_F3': 'F3',
+            'KEY_F4': 'F4',
         }
 
         Z80.Z80(CLK_CPU_HZ / 1_000_000)
@@ -270,6 +282,9 @@ class CA80:
                         else:
                             if is_enter:
                                 ca80_key = '='
+                            elif key.is_sequence and key.name in self.KEYMAP_FN:
+                                # Klawisze funkcyjne F1-F4 (sekwencje terminala)
+                                ca80_key = self.KEYMAP_FN[key.name]
                             else:
                                 ca80_key = self.KEYMAP_PC.get(str(key))
                             if ca80_key:
