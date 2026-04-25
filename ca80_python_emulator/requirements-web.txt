@@ -1,0 +1,6 @@
+# Wersja webowa CA80
+# Instalacja: pip install -r requirements-web.txt
+
+aiohttp>=3.9.0    # serwer HTTP + WebSocket
+sounddevice       # audio (port 0xEC)
+numpy             # bufory audio dla sounddevice
