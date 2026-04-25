@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CA80 Mikrokomputer</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #2a2318;
+    background-image: radial-gradient(ellipse at 50% 40%, #3d3020 0%, #1a1510 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    user-select: none;
+  }
+  #root { display: flex; justify-content: center; align-items: center; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── Chamfered polygon helper ─────────────────────────────────────────────────
+// Returns SVG polygon points string for a rectangle with chamfered corners
+function chamfer(x, y, w, h, c) {
+  return [
+    `${x+c},${y}`, `${x+w-c},${y}`,
+    `${x+w},${y+c}`, `${x+w},${y+h-c}`,
+    `${x+w-c},${y+h}`, `${x+c},${y+h}`,
+    `${x},${y+h-c}`, `${x},${y+c}`
+  ].join(' ');
+}
+
+// ─── Segment shapes (viewBox 0 0 52 76) ──────────────────────────────────────
+// Horizontal segs: chamfer=3, Vertical segs: chamfer=2, DP: circle
+const SEGS = {
+  a:  { type: 'poly',   points: chamfer(5,  1,  34, 7, 3) },  // top
+  b:  { type: 'poly',   points: chamfer(37, 5,  7, 28, 2) },  // top-right
+  c:  { type: 'poly',   points: chamfer(37,41,  7, 28, 2) },  // bot-right
+  d:  { type: 'poly',   points: chamfer(5, 68,  34, 7, 3) },  // bottom
+  e:  { type: 'poly',   points: chamfer(1, 41,  7, 28, 2) },  // bot-left
+  f:  { type: 'poly',   points: chamfer(1,  5,  7, 28, 2) },  // top-left
+  g:  { type: 'poly',   points: chamfer(5, 35,  34, 7, 3) },  // middle
+  dp: { type: 'circle', cx: 49, cy: 72, r: 4              },  // decimal point
+};
+
+// Hit areas (generous, transparent)
+const SEG_HITS = {
+  a:  { type: 'rect', x: 3,  y: 0,  w: 38, h: 14 },
+  b:  { type: 'rect', x: 31, y: 4,  w: 14, h: 32 },
+  c:  { type: 'rect', x: 31, y: 40, w: 14, h: 32 },
+  d:  { type: 'rect', x: 3,  y: 62, w: 38, h: 14 },
+  e:  { type: 'rect', x: 0,  y: 40, w: 14, h: 32 },
+  f:  { type: 'rect', x: 0,  y: 4,  w: 14, h: 32 },
+  g:  { type: 'rect', x: 3,  y: 30, w: 38, h: 16 },
+  dp: { type: 'circle', cx: 49, cy: 72, r: 9      },
+};
+
+// ─── Hex character → segment sets ───────────────────────────────────────────
+const HEX_SEGS = {
+  '0': new Set(['a','b','c','d','e','f']),
+  '1': new Set(['b','c']),
+  '2': new Set(['a','b','d','e','g']),
+  '3': new Set(['a','b','c','d','g']),
+  '4': new Set(['b','c','f','g']),
+  '5': new Set(['a','c','d','f','g']),
+  '6': new Set(['a','c','d','e','f','g']),
+  '7': new Set(['a','b','c']),
+  '8': new Set(['a','b','c','d','e','f','g']),
+  '9': new Set(['a','b','c','d','f','g']),
+  'A': new Set(['a','b','c','e','f','g']),
+  'B': new Set(['c','d','e','f','g']),
+  'C': new Set(['a','d','e','f']),
+  'D': new Set(['b','c','d','e','g']),
+  'E': new Set(['a','d','e','f','g']),
+  'F': new Set(['a','e','f','g']),
+  'G': new Set(['a','c','d','e','f']),  // G = C + dolny-prawy, bez środka
+  ' ': new Set([]),
+  '-': new Set(['g']),
+  'H': new Set(['b','c','e','f','g']),
+  'L': new Set(['d','e','f']),
+  'P': new Set(['a','b','e','f','g']),
+  'U': new Set(['b','c','d','e','f']),
+};
+
+function initDisplay() {
+  // Show "    CA80" — 4 blank + C A 8 0
+  return ['C','A','8','0',' ',' ',' ',' '].reverse().map(ch =>
+    new Set(HEX_SEGS[ch] || [])
+  ).reverse();
+  // Actually: display is [d0..d7], want d4=C d5=A d6=8 d7=0
+}
+
+function buildInitDisplay() {
+  const chars = [' ',' ',' ',' ','C','A','8','0'];
+  return chars.map(ch => new Set(HEX_SEGS[ch] || []));
+}
+
+// ─── Single seven-segment digit ──────────────────────────────────────────────
+function SevenSegDigit({ segments, onToggleSeg, selected, dimIdx, onSelect }) {
+  const [hovered, setHovered] = useState(null);
+  const uid = `g${dimIdx}`;
+
+  const segFill = (seg) => {
+    const on = segments.has(seg);
+    if (hovered === seg) return on ? `url(#${uid}-on-h)` : '#0e2a10';
+    return on ? `url(#${uid}-on)` : '#0b1e0d';
+  };
+
+  const segGlow = (seg) => segments.has(seg) ? `url(#${uid}-glow)` : 'none';
+
+  return (
+    <svg
+      viewBox="0 0 56 80"
+      width="56" height="80"
+      style={{ cursor: 'crosshair', flexShrink: 0, overflow: 'visible' }}
+      onClick={() => onSelect(dimIdx)}
+    >
+      <defs>
+        {/* Glow filter for ON segments */}
+        <filter id={`${uid}-glow`} x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="b2"/>
+          <feColorMatrix in="b1" type="matrix"
+            values="0 0 0 0 0.1  0 0 0 0 1  0 0 0 0 0.2  0 0 0 0.7 0" result="g1"/>
+          <feColorMatrix in="b2" type="matrix"
+            values="0 0 0 0 0.2  0 0 0 0 1  0 0 0 0 0.3  0 0 0 0.5 0" result="g2"/>
+          <feMerge>
+            <feMergeNode in="g1"/>
+            <feMergeNode in="g2"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        {/* Gradient for ON segment — bright lime center, slightly dimmer edges */}
+        <radialGradient id={`${uid}-on`} cx="50%" cy="50%" r="60%">
+          <stop offset="0%"   stopColor="#ccff44"/>
+          <stop offset="40%"  stopColor="#44ff55"/>
+          <stop offset="100%" stopColor="#22cc33"/>
+        </radialGradient>
+        {/* Hovered ON gradient */}
+        <radialGradient id={`${uid}-on-h`} cx="50%" cy="50%" r="60%">
+          <stop offset="0%"   stopColor="#eeff99"/>
+          <stop offset="50%"  stopColor="#88ffaa"/>
+          <stop offset="100%" stopColor="#44dd55"/>
+        </radialGradient>
+      </defs>
+
+      {/* Background hit zone */}
+      <rect x="0" y="0" width="56" height="80" fill="transparent"/>
+
+      {/* Segments */}
+      {Object.entries(SEGS).map(([seg, shape]) => {
+        const hit = SEG_HITS[seg];
+        return (
+          <g key={seg}>
+            {/* Visual shape */}
+            {shape.type === 'poly'
+              ? <polygon points={shape.points}
+                  fill={segFill(seg)}
+                  filter={segGlow(seg)}
+                  style={{ transition: 'fill 0.09s' }}
+                  pointerEvents="none"/>
+              : <circle cx={shape.cx} cy={shape.cy} r={shape.r}
+                  fill={segFill(seg)}
+                  filter={segGlow(seg)}
+                  style={{ transition: 'fill 0.09s' }}
+                  pointerEvents="none"/>
+            }
+            {/* Hit area */}
+            {hit.type === 'rect'
+              ? <rect x={hit.x} y={hit.y} width={hit.w} height={hit.h}
+                  fill="transparent" style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => setHovered(seg)}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={(e) => { e.stopPropagation(); onToggleSeg(dimIdx, seg); }}/>
+              : <circle cx={hit.cx} cy={hit.cy} r={hit.r}
+                  fill="transparent" style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => setHovered(seg)}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={(e) => { e.stopPropagation(); onToggleSeg(dimIdx, seg); }}/>
+            }
+          </g>
+        );
+      })}
+
+      {/* Selection ring */}
+      {selected && (
+        <rect x="1" y="1" width="54" height="78" rx="3"
+          fill="none" stroke="#44ff66" strokeWidth="1"
+          strokeDasharray="4 3" opacity="0.45"/>
+      )}
+    </svg>
+  );
+}
+
+// ─── Keyboard key ────────────────────────────────────────────────────────────
+function Key({ label, topLeft, topRight, onKeyDown, onKeyUp, wide, dark }) {
+  const [pressed, setPressed] = useState(false);
+
+  // Mouse / touch down: rozpoczyna naciśnięcie
+  const handlePressStart = (e) => {
+    e.preventDefault();
+    if (pressed) return;  // dedup wielokrotnego pressdown na tym samym klawiszu
+    setPressed(true);
+    onKeyDown && onKeyDown(label);
+  };
+
+  // Mouse / touch up: kończy naciśnięcie
+  const handlePressEnd = (e) => {
+    e && e.preventDefault();
+    if (!pressed) return;
+    setPressed(false);
+    onKeyUp && onKeyUp(label);
+  };
+
+  // Jeśli mysz wyjdzie z klawisza w trakcie wciśnięcia, traktuj jak keyup
+  const handleMouseLeave = () => {
+    if (pressed) handlePressEnd();
+  };
+
+  const baseStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: wide ? 68 : 48,
+    height: 40,
+    borderRadius: 6,
+    cursor: 'pointer',
+    position: 'relative',
+    transition: 'transform 0.08s, box-shadow 0.08s',
+    transform: pressed ? 'translateY(2px)' : 'translateY(0)',
+    flexShrink: 0,
+  };
+
+  if (dark) {
+    Object.assign(baseStyle, {
+      background: pressed
+        ? 'linear-gradient(180deg, #1a1c1f 0%, #2a2d32 100%)'
+        : 'linear-gradient(180deg, #2e3136 0%, #1e2125 100%)',
+      boxShadow: pressed
+        ? 'inset 0 2px 4px rgba(0,0,0,0.7), 0 1px 0 #111'
+        : '0 4px 0 #111, 0 5px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)',
+      border: '1px solid #111',
+    });
+  } else {
+    Object.assign(baseStyle, {
+      background: pressed
+        ? 'linear-gradient(180deg, #c8c6c0 0%, #d8d5cd 100%)'
+        : 'linear-gradient(180deg, #eae8e0 0%, #d5d2c8 100%)',
+      boxShadow: pressed
+        ? 'inset 0 2px 3px rgba(0,0,0,0.35), 0 1px 0 #888'
+        : '0 4px 0 #999, 0 5px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.8)',
+      border: '1px solid #aaa',
+    });
+  }
+
+  const mainColor = dark ? '#cdd0d5' : '#1a1a18';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      {/* Labels above key */}
+      {(topLeft || topRight) ? (
+        <div style={{ display: 'flex', gap: 3, alignItems: 'baseline', height: 13 }}>
+          {topLeft  && <span style={{ fontSize: 9, fontWeight: 700, color: '#ffffff',  fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', lineHeight: 1 }}>{topLeft}</span>}
+          {topRight && <span style={{ fontSize: 9, fontWeight: 700, color: '#e03020', fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', lineHeight: 1 }}>{topRight}</span>}
+        </div>
+      ) : (
+        <div style={{ height: 13 }}/>
+      )}
+      {/* Key cap */}
+      <div
+        style={baseStyle}
+        onMouseDown={handlePressStart}
+        onMouseUp={handlePressEnd}
+        onMouseLeave={handleMouseLeave}
+        onTouchStart={handlePressStart}
+        onTouchEnd={handlePressEnd}
+        onTouchCancel={handlePressEnd}
+      >
+        <span style={{
+          fontSize: dark ? 10 : 13, fontWeight: dark ? 500 : 700,
+          color: mainColor, letterSpacing: 0.5, lineHeight: 1,
+          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif'
+        }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Horizontal slide switch ──────────────────────────────────────────────────
+// positions: array of label strings, e.g. ['R','0','1'] or ['0','1']
+function SlideSwitch({ name, positions }) {
+  const [pos, setPos] = useState(0);
+  const trackW = positions.length === 3 ? 70 : 48;
+  const thumbW = 18;
+  const travel = trackW - thumbW - 4; // total travel px
+  const step = travel / (positions.length - 1);
+  const thumbLeft = 2 + pos * step;
+
+  const cycle = () => setPos(p => (p + 1) % positions.length);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+      {/* Label above */}
+      <span style={{
+        fontSize: 10, fontWeight: 700, color: '#ffffff',
+        fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+        letterSpacing: 1,
+      }}>{name}</span>
+
+      {/* Track */}
+      <div
+        onClick={cycle}
+        style={{
+          width: trackW, height: 16, background: '#1a1c20',
+          borderRadius: 4, border: '1px solid #555',
+          position: 'relative', cursor: 'pointer',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.7)',
+        }}
+      >
+        {/* Thumb */}
+        <div style={{
+          position: 'absolute', top: 2, left: thumbLeft,
+          width: thumbW, height: 12,
+          background: 'linear-gradient(180deg, #d8d5cc 0%, #a8a5a0 100%)',
+          borderRadius: 3, transition: 'left 0.15s ease',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {/* Grip lines */}
+          {[0,1,2].map(i => (
+            <div key={i} style={{
+              width: 1, height: 7, background: 'rgba(0,0,0,0.25)',
+              marginLeft: i > 0 ? 2 : 0, borderRadius: 1,
+            }}/>
+          ))}
+        </div>
+      </div>
+
+      {/* Position labels below */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        width: trackW, paddingLeft: 2, paddingRight: 2,
+      }}>
+        {positions.map((lbl, i) => (
+          <span key={i} style={{
+            fontSize: 8, fontWeight: pos === i ? 700 : 500,
+            color: pos === i ? '#ffffff' : '#aaaaaa',
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            transition: 'color 0.1s',
+            minWidth: 10, textAlign: 'center',
+          }}>{lbl}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+//
+// W wersji webowej emulatora:
+//  - Stan wyświetlacza jest CZYTANY z WebSocket (60 fps), nie modyfikowany lokalnie
+//  - Klawisze wysyłają keydown/keyup przez WebSocket do emulatora Pythonowego
+//  - Mapowanie segmentów: bajt z BWYS → bity → segmenty SVG (a..g + DP)
+//  - Anode handling: Python wysyła już zinwertowane segmenty jeśli --anode
+
+// Bity bajtu BWYS → nazwy segmentów SVG (zgodnie z R24 dokumentacji CA80)
+//   bit 0 = a, bit 1 = b, ..., bit 6 = g, bit 7 = K (kropka, DP)
+const SEG_BITS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'dp'];
+
+function byteToSegmentSet(byteValue) {
+  const set = new Set();
+  for (let i = 0; i < 8; i++) {
+    if (byteValue & (1 << i)) set.add(SEG_BITS[i]);
+  }
+  return set;
+}
+
+// Konwertuje listę 8 bajtów (z BWYS, indeks 0 = lewa cyfra) na listę 8 Set-ów
+function segmentsFromBytes(bytes) {
+  if (!bytes || bytes.length !== 8) {
+    return Array(8).fill(null).map(() => new Set());
+  }
+  return bytes.map(byteToSegmentSet);
+}
+
+function CA80() {
+  const [display, setDisplay] = useState(() => Array(8).fill(null).map(() => new Set()));
+  const [status, setStatus] = useState('Łączenie z emulatorem...');
+  const [connected, setConnected] = useState(false);
+  const [cpuRunning, setCpuRunning] = useState(false);
+  const [fault, setFault] = useState(false);
+  const wsRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // ─── WebSocket connection ──────────────────────────────────────────────
+  useEffect(() => {
+    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://')
+                  + location.host + '/ws';
+
+    let reconnectTimer = null;
+
+    const connect = () => {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setConnected(true);
+        setStatus('Połączono z emulatorem');
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'display') {
+            setDisplay(segmentsFromBytes(msg.segments));
+            setCpuRunning(!!msg.cpu_running);
+            setFault(!!msg.fault);
+            if (msg.fault && msg.fault_message) {
+              setStatus('FAULT: ' + msg.fault_message);
+            }
+          }
+        } catch (e) {
+          console.error('Błąd parsowania WS:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+        setCpuRunning(false);
+        setStatus('Rozłączono. Próbuję wznowić...');
+        // Auto-reconnect po 1 s
+        reconnectTimer = setTimeout(connect, 1000);
+      };
+
+      ws.onerror = () => {
+        // onclose i tak się wywoła
+      };
+    };
+
+    connect();
+
+    // Cleanup: gdy okno traci fokus, wyczyść klawisze (żeby nie zostały wciśnięte)
+    const onBlur = () => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'keyclear' }));
+      }
+    };
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      window.removeEventListener('blur', onBlur);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;  // unikamy reconnect przy cleanup
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // ─── Wysyłanie klawiszy do emulatora ───────────────────────────────────
+  const sendKey = useCallback((type, key) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, key }));
+    }
+  }, []);
+
+  const handleKeyDown = useCallback((label) => {
+    sendKey('keydown', label);
+    setStatus(`▼ ${label}`);
+  }, [sendKey]);
+
+  const handleKeyUp = useCallback((label) => {
+    sendKey('keyup', label);
+  }, [sendKey]);
+
+  // ─── Obsługa fizycznej klawiatury PC ───────────────────────────────────
+  // Mapowanie klawiszy fizycznych PC → klawisze CA80
+  // Trzymamy zbiór aktualnie wciśniętych klawiszy żeby auto-repeat
+  // przeglądarki nie generował powtarzalnych keydown.
+  useEffect(() => {
+    const pressedPhysical = new Set();
+
+    const physicalToCA80 = (e) => {
+      // Klawisze funkcyjne F1-F4
+      if (e.key === 'F1') return 'F1';
+      if (e.key === 'F2') return 'F2';
+      if (e.key === 'F3') return 'F3';
+      if (e.key === 'F4') return 'F4';
+      // Cyfry, A-F (case-insensitive), G, M
+      const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if ('0123456789ABCDEF'.includes(k) && k.length === 1) return k;
+      if (k === 'G' || k === 'M') return k;
+      if (e.key === '.') return '.';
+      if (e.key === '=' || e.key === 'Enter') return '=';
+      if (e.key === ' ') return '.';  // spacja jako alternatywa SPAC
+      return null;
+    };
+
+    const onKeyDown = (e) => {
+      const ca80Key = physicalToCA80(e);
+      if (!ca80Key) return;
+      e.preventDefault();
+      // Dedup auto-repeat
+      if (pressedPhysical.has(ca80Key)) return;
+      pressedPhysical.add(ca80Key);
+      handleKeyDown(ca80Key);
+    };
+
+    const onKeyUp = (e) => {
+      const ca80Key = physicalToCA80(e);
+      if (!ca80Key) return;
+      e.preventDefault();
+      pressedPhysical.delete(ca80Key);
+      handleKeyUp(ca80Key);
+    };
+
+    // Cleanup gdy zmieni się fokus — żeby nie zostawiać "wciśniętych" klawiszy
+    const onBlurClear = () => {
+      pressedPhysical.forEach(k => handleKeyUp(k));
+      pressedPhysical.clear();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlurClear);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlurClear);
+    };
+  }, [handleKeyDown, handleKeyUp]);
+
+  // Keyboard layout
+  const rows = [
+    {
+      fKey: { label: 'F1' },
+      keys: [
+        { label: 'C', topLeft: 'A', topRight: 'B' },
+        { label: 'D', topLeft: 'C', topRight: 'D' },
+        { label: 'E', topLeft: 'E', topRight: 'F' },
+        { label: 'F', topLeft: 'G', topRight: 'H' },
+        { label: 'M' },
+      ]
+    },
+    {
+      fKey: { label: 'F2' },
+      keys: [
+        { label: '8', topLeft: 'I', topRight: 'J' },
+        { label: '9', topLeft: 'K', topRight: 'L' },
+        { label: 'A', topLeft: 'M', topRight: 'N' },
+        { label: 'B', topLeft: 'O', topRight: 'P' },
+        { label: 'G', topLeft: ':', topRight: '%' },
+      ]
+    },
+    {
+      fKey: { label: 'F3' },
+      keys: [
+        { label: '4', topLeft: 'Q', topRight: 'R' },
+        { label: '5', topLeft: 'S', topRight: 'T' },
+        { label: '6', topLeft: 'U', topRight: 'V' },
+        { label: '7', topLeft: 'W', topRight: 'X' },
+        { label: '.', topLeft: '.', topRight: '!' },
+      ]
+    },
+    {
+      fKey: { label: 'F4' },
+      keys: [
+        { label: '0', topLeft: 'Y', topRight: 'Z' },
+        { label: '1', topLeft: '(', topRight: ')' },
+        { label: '2', topLeft: '+', topRight: '-' },
+        { label: '3', topLeft: '/', topRight: '*' },
+        { label: '=', topLeft: "'", topRight: '=' },
+      ]
+    },
+  ];
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+    }}>
+      {/* Computer body */}
+      <div style={{
+        width: 680,
+        background: 'linear-gradient(160deg, #f0ede6 0%, #dedad0 40%, #ccc8be 100%)',
+        borderRadius: 28,
+        padding: '18px 22px 26px 22px',
+        boxShadow: `
+          0 30px 80px rgba(0,0,0,0.7),
+          0 0 0 1px rgba(255,255,255,0.3),
+          inset 0 2px 0 rgba(255,255,255,0.6),
+          inset 0 -3px 6px rgba(0,0,0,0.15)
+        `,
+        position: 'relative',
+      }}>
+
+
+        {/* ── Display section ── */}
+        <div style={{
+          background: 'linear-gradient(180deg, #1a3a1e 0%, #0d2010 100%)',
+          borderRadius: 12,
+          padding: '10px 16px 12px',
+          marginBottom: 16,
+          boxShadow: `
+            inset 0 4px 12px rgba(0,0,0,0.7),
+            0 2px 0 rgba(255,255,255,0.15),
+            0 -1px 0 rgba(0,0,0,0.3)
+          `,
+          border: '2px solid #0a1e0d',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {/* Green tinted glass overlay */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(180deg, rgba(0,180,60,0.08) 0%, rgba(0,80,20,0.15) 100%)',
+            pointerEvents: 'none', zIndex: 2, borderRadius: 10,
+          }} />
+          {/* Glass sheen */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: '40%',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 100%)',
+            pointerEvents: 'none', zIndex: 3, borderRadius: '10px 10px 0 0',
+          }} />
+
+          {/* Digit row */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 2, position: 'relative', zIndex: 4,
+          }}>
+            {display.map((segs, i) => (
+              <SevenSegDigit
+                key={i}
+                dimIdx={i}
+                segments={segs}
+                onToggleSeg={() => {}}
+                selected={false}
+                onSelect={() => {}}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ── Keyboard panel ── */}
+        <div style={{
+          background: 'linear-gradient(180deg, #373b44 0%, #2d3038 100%)',
+          borderRadius: 14,
+          padding: '14px 16px 18px',
+          boxShadow: `
+            inset 0 3px 8px rgba(0,0,0,0.5),
+            inset 0 -1px 0 rgba(255,255,255,0.05),
+            0 2px 4px rgba(0,0,0,0.3)
+          `,
+        }}>
+          {/* MIK logo + toggle switches row */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            marginBottom: 14, paddingLeft: 4, paddingRight: 8,
+          }}>
+            {/* MIK logo */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 0 }}>
+              <span style={{
+                fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+                fontWeight: 800, fontSize: 20, color: '#d04030',
+                letterSpacing: 1, lineHeight: 1,
+              }}>MİK</span>
+            </div>
+
+            {/* Slide switches — horizontal, side by side */}
+            <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+              <SlideSwitch name="I" positions={['R','0','1']} />
+              <SlideSwitch name="H" positions={['0','1']} />
+            </div>
+          </div>
+
+          {/* Key rows */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map((row, ri) => (
+              <div key={ri} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+                {/* Function key */}
+                <Key
+                  label={row.fKey.label}
+                  dark={true}
+                  onKeyDown={handleKeyDown}
+                  onKeyUp={handleKeyUp}
+                />
+                {/* Main keys */}
+                {row.keys.map((k, ki) => (
+                  <Key
+                    key={ki}
+                    label={k.label}
+                    topLeft={k.topLeft}
+                    topRight={k.topRight}
+                    onKeyDown={handleKeyDown}
+                    onKeyUp={handleKeyUp}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Label at bottom */}
+          <div style={{ marginTop: 16, paddingLeft: 4, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{
+              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+              fontSize: 11, color: '#8a8e95', letterSpacing: 0.5,
+            }}>✦</span>
+            <span style={{
+              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+              fontWeight: 700, fontSize: 16, color: '#ffffff',
+              letterSpacing: 1,
+            }}>CA80</span>
+            <span style={{
+              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+              fontWeight: 300, fontSize: 13, color: '#ffffff',
+              letterSpacing: 2,
+            }}>Mikrokomputer</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Status / instructions */}
+      <div style={{
+        color: '#5a7a60', fontSize: 12, letterSpacing: 1,
+        fontFamily: 'monospace', opacity: 0.8,
+        textAlign: 'center', maxWidth: 600, lineHeight: 1.6,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+          <span style={{
+            display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+            background: connected ? '#4ade80' : '#dc2626',
+            boxShadow: connected ? '0 0 6px #4ade80' : '0 0 6px #dc2626',
+            transition: 'all 0.2s',
+          }}/>
+          <span>{connected ? 'Połączono' : 'Brak połączenia'}</span>
+          {connected && (
+            <span style={{
+              color: cpuRunning ? '#4ade80' : '#888',
+              opacity: 0.8, fontSize: 11,
+            }}>· CPU {cpuRunning ? 'RUN' : 'IDLE'}</span>
+          )}
+          {fault && <span style={{ color: '#dc2626', fontWeight: 700 }}>· FAULT</span>}
+          <span style={{ opacity: 0.5 }}>· {status}</span>
+        </div>
+        <div style={{ opacity: 0.6, fontSize: 11, marginTop: 6 }}>
+          Mysz / dotyk · klawisze 0-9, A-F, G, M, F1-F4, kropka, Enter / =
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<CA80 />);
+</script>
+</body>
+</html>
