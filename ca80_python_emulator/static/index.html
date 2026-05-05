@@ -364,6 +364,130 @@ function SlideSwitch({ name, positions }) {
   );
 }
 
+// ─── Keyboard panel ───────────────────────────────────────────────────────────────
+const KEYBOARD_ROWS = [
+  {
+    fKey: { label: 'F1' },
+    keys: [
+      { label: 'C', topLeft: 'A', topRight: 'B' },
+      { label: 'D', topLeft: 'C', topRight: 'D' },
+      { label: 'E', topLeft: 'E', topRight: 'F' },
+      { label: 'F', topLeft: 'G', topRight: 'H' },
+      { label: 'M' },
+    ]
+  },
+  {
+    fKey: { label: 'F2' },
+    keys: [
+      { label: '8', topLeft: 'I', topRight: 'J' },
+      { label: '9', topLeft: 'K', topRight: 'L' },
+      { label: 'A', topLeft: 'M', topRight: 'N' },
+      { label: 'B', topLeft: 'O', topRight: 'P' },
+      { label: 'G', topLeft: ':', topRight: '%' },
+    ]
+  },
+  {
+    fKey: { label: 'F3' },
+    keys: [
+      { label: '4', topLeft: 'Q', topRight: 'R' },
+      { label: '5', topLeft: 'S', topRight: 'T' },
+      { label: '6', topLeft: 'U', topRight: 'V' },
+      { label: '7', topLeft: 'W', topRight: 'X' },
+      { label: '.', topLeft: '.', topRight: '!' },
+    ]
+  },
+  {
+    fKey: { label: 'F4' },
+    keys: [
+      { label: '0', topLeft: 'Y', topRight: 'Z' },
+      { label: '1', topLeft: '(', topRight: ')' },
+      { label: '2', topLeft: '+', topRight: '-' },
+      { label: '3', topLeft: '/', topRight: '*' },
+      { label: '=', topLeft: "'", topRight: '=' },
+    ]
+  },
+];
+
+const KeyboardPanel = React.memo(function KeyboardPanel({ onKeyDown, onKeyUp }) {
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, #373b44 0%, #2d3038 100%)',
+      borderRadius: 14,
+      padding: '14px 16px 18px',
+      boxShadow: `
+        inset 0 3px 8px rgba(0,0,0,0.5),
+        inset 0 -1px 0 rgba(255,255,255,0.05),
+        0 2px 4px rgba(0,0,0,0.3)
+      `,
+    }}>
+      {/* MIK logo + toggle switches row */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 14, paddingLeft: 4, paddingRight: 8,
+      }}>
+        {/* MIK logo */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 0 }}>
+          <span style={{
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            fontWeight: 800, fontSize: 20, color: '#d04030',
+            letterSpacing: 1, lineHeight: 1,
+          }}>MİK</span>
+        </div>
+
+        {/* Slide switches — horizontal, side by side */}
+        <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+          <SlideSwitch name="I" positions={['R','0','1']} />
+          <SlideSwitch name="H" positions={['0','1']} />
+        </div>
+      </div>
+
+      {/* Key rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {KEYBOARD_ROWS.map((row, ri) => (
+          <div key={ri} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+            {/* Function key */}
+            <Key
+              label={row.fKey.label}
+              dark={true}
+              onKeyDown={onKeyDown}
+              onKeyUp={onKeyUp}
+            />
+            {/* Main keys */}
+            {row.keys.map((k, ki) => (
+              <Key
+                key={ki}
+                label={k.label}
+                topLeft={k.topLeft}
+                topRight={k.topRight}
+                onKeyDown={onKeyDown}
+                onKeyUp={onKeyUp}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Label at bottom */}
+      <div style={{ marginTop: 16, paddingLeft: 4, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{
+          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+          fontSize: 11, color: '#8a8e95', letterSpacing: 0.5,
+        }}>✦</span>
+        <span style={{
+          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+          fontWeight: 700, fontSize: 16, color: '#ffffff',
+          letterSpacing: 1,
+        }}>CA80</span>
+        <span style={{
+          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+          fontWeight: 300, fontSize: 13, color: '#ffffff',
+          letterSpacing: 2,
+        }}>Mikrokomputer</span>
+      </div>
+    </div>
+  );
+});
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 //
 // W wersji webowej emulatora:
@@ -540,50 +664,6 @@ function CA80() {
     };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Keyboard layout
-  const rows = [
-    {
-      fKey: { label: 'F1' },
-      keys: [
-        { label: 'C', topLeft: 'A', topRight: 'B' },
-        { label: 'D', topLeft: 'C', topRight: 'D' },
-        { label: 'E', topLeft: 'E', topRight: 'F' },
-        { label: 'F', topLeft: 'G', topRight: 'H' },
-        { label: 'M' },
-      ]
-    },
-    {
-      fKey: { label: 'F2' },
-      keys: [
-        { label: '8', topLeft: 'I', topRight: 'J' },
-        { label: '9', topLeft: 'K', topRight: 'L' },
-        { label: 'A', topLeft: 'M', topRight: 'N' },
-        { label: 'B', topLeft: 'O', topRight: 'P' },
-        { label: 'G', topLeft: ':', topRight: '%' },
-      ]
-    },
-    {
-      fKey: { label: 'F3' },
-      keys: [
-        { label: '4', topLeft: 'Q', topRight: 'R' },
-        { label: '5', topLeft: 'S', topRight: 'T' },
-        { label: '6', topLeft: 'U', topRight: 'V' },
-        { label: '7', topLeft: 'W', topRight: 'X' },
-        { label: '.', topLeft: '.', topRight: '!' },
-      ]
-    },
-    {
-      fKey: { label: 'F4' },
-      keys: [
-        { label: '0', topLeft: 'Y', topRight: 'Z' },
-        { label: '1', topLeft: '(', topRight: ')' },
-        { label: '2', topLeft: '+', topRight: '-' },
-        { label: '3', topLeft: '/', topRight: '*' },
-        { label: '=', topLeft: "'", topRight: '=' },
-      ]
-    },
-  ];
-
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
@@ -651,81 +731,7 @@ function CA80() {
         </div>
 
         {/* ── Keyboard panel ── */}
-        <div style={{
-          background: 'linear-gradient(180deg, #373b44 0%, #2d3038 100%)',
-          borderRadius: 14,
-          padding: '14px 16px 18px',
-          boxShadow: `
-            inset 0 3px 8px rgba(0,0,0,0.5),
-            inset 0 -1px 0 rgba(255,255,255,0.05),
-            0 2px 4px rgba(0,0,0,0.3)
-          `,
-        }}>
-          {/* MIK logo + toggle switches row */}
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginBottom: 14, paddingLeft: 4, paddingRight: 8,
-          }}>
-            {/* MIK logo */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 0 }}>
-              <span style={{
-                fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
-                fontWeight: 800, fontSize: 20, color: '#d04030',
-                letterSpacing: 1, lineHeight: 1,
-              }}>MİK</span>
-            </div>
-
-            {/* Slide switches — horizontal, side by side */}
-            <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-              <SlideSwitch name="I" positions={['R','0','1']} />
-              <SlideSwitch name="H" positions={['0','1']} />
-            </div>
-          </div>
-
-          {/* Key rows */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map((row, ri) => (
-              <div key={ri} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                {/* Function key */}
-                <Key
-                  label={row.fKey.label}
-                  dark={true}
-                  onKeyDown={handleKeyDown}
-                  onKeyUp={handleKeyUp}
-                />
-                {/* Main keys */}
-                {row.keys.map((k, ki) => (
-                  <Key
-                    key={ki}
-                    label={k.label}
-                    topLeft={k.topLeft}
-                    topRight={k.topRight}
-                    onKeyDown={handleKeyDown}
-                    onKeyUp={handleKeyUp}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-
-          {/* Label at bottom */}
-          <div style={{ marginTop: 16, paddingLeft: 4, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{
-              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
-              fontSize: 11, color: '#8a8e95', letterSpacing: 0.5,
-            }}>✦</span>
-            <span style={{
-              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
-              fontWeight: 700, fontSize: 16, color: '#ffffff',
-              letterSpacing: 1,
-            }}>CA80</span>
-            <span style={{
-              fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
-              fontWeight: 300, fontSize: 13, color: '#ffffff',
-              letterSpacing: 2,
-            }}>Mikrokomputer</span>
-          </div>
-        </div>
+        <KeyboardPanel onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} />
       </div>
 
       {/* Status / instructions */}
