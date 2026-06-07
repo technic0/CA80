@@ -36,6 +36,7 @@ URUCHOMIENIE:
 
   Po starcie otwórz w przeglądarce: http://localhost:8000/
 """
+from __future__ import annotations
 import argparse
 import asyncio
 import json
