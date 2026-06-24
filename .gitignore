@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage and packaging output
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# macOS metadata
+.DS_Store
