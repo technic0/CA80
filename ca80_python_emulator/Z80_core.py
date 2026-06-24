@@ -1429,7 +1429,7 @@ def indr(): # 0xBA
         return 16
 
 def otdr(): # 0xBB
-    otdr()
+    outd()
     if _B[0] != 0:
         _PC[0] -= 2
         return 21
