@@ -1429,7 +1429,7 @@ def indr(): # 0xBA
         return 16
 
 def otdr(): # 0xBB
-    outd()
+    otdr()
     if _B[0] != 0:
         _PC[0] -= 2
         return 21
@@ -2905,7 +2905,16 @@ def dd(): # 0xDD
     if op == 0xCB:
         tstates += idcb()
     else:
-        tstates += _ixiydict[op]()
+        # Undocumented Z80 behavior: jeśli opcode po prefiksie DD nie używa
+        # rejestru HL (czyli nie ma wpisu w _ixiydict), prefix DD jest
+        # "zużyty" (R już zinkrementowane przez inc_r() wyżej), a opcode
+        # wykonuje się jak normalna instrukcja przez main_cmds. Bez tego
+        # fallback'u PyZX rzuca KeyError dla DD 00, DD 04, DD 76 (HALT), itp.
+        handler = _ixiydict.get(op)
+        if handler is not None:
+            tstates += handler()
+        else:
+            tstates += main_cmds[op]()
     return 0
 
 def sbca_n(): # 0xDE
@@ -3118,7 +3127,13 @@ def fd(): # 0xFD
     if op == 0xCB:
         tstates += idcb()
     else:
-        tstates += _ixiydict[op]()
+        # Undocumented Z80 behavior - analogicznie do dd() powyżej.
+        # Patrz komentarz w dd() dla szczegółów.
+        handler = _ixiydict.get(op)
+        if handler is not None:
+            tstates += handler()
+        else:
+            tstates += main_cmds[op]()
     return 0
 
 def cpa_n(): # 0xFE
